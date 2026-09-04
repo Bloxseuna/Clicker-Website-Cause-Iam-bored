@@ -29,6 +29,10 @@
               <h1>Untitled Clicker or SMT</h1>
             </div>
           </div>
+
+          <button id="settingsButton" class="settings-button" type="button" aria-label="Open settings">
+            ⚙️
+          </button>
         </header>
 
         <div class="score-card">
@@ -50,6 +54,15 @@
           </div>
           <span id="leaderboardBadge" class="leaderboard-badge">Live</span>
         </div>
+
+        <div class="leaderboard-toolbar" aria-label="Leaderboard time filters">
+          <button class="leaderboard-mode active" type="button" data-mode="longtime">Longtime</button>
+          <button class="leaderboard-mode" type="button" data-mode="weekly">Weekly</button>
+          <button class="leaderboard-mode" type="button" data-mode="daily">Daily</button>
+          <button class="leaderboard-mode" type="button" data-mode="hourly">Hourly</button>
+        </div>
+
+        <div id="leaderboardResetText" class="leaderboard-reset-text">Resets in —</div>
 
         <div class="table-wrap">
           <table>
@@ -75,16 +88,56 @@
         const usernameKey = "clickerUsername";
         const deviceIdKey = "clickerDeviceId";
         const scoreKey = "clickerScore";
+        const themeKey = "clickerTheme";
+        const backgroundModeKey = "clickerBackgroundMode";
+        const musicKey = "clickerMusic";
         const supabaseUrl = "https://taiplbyjbzylhodxfqri.supabase.co";
         const supabaseAnonKey = "sb_publishable_9m60t8PkiAelfPBG7wCjpQ_U9Zkm9Ry";
         const leaderboardCandidates = ["leaderboard", "leaderboards"];
+        const leaderboardModes = {
+          longtime: { label: "Longtime" },
+          weekly: { label: "Weekly", hours: 24 * 7 },
+          daily: { label: "Daily", hours: 24 },
+          hourly: { label: "Hourly", hours: 1 },
+        };
 
         let activeLeaderboardTable = leaderboardCandidates[0];
+        let currentLeaderboardMode = "longtime";
 
         const button = document.getElementById("clickButton");
         const totalClicks = document.getElementById("totalClicks");
         const statusText = document.getElementById("statusText");
         const leaderboardBody = document.getElementById("leaderboardBody");
+        const leaderboardResetText = document.getElementById("leaderboardResetText");
+        const modeButtons = [...document.querySelectorAll(".leaderboard-mode")];
+        const settingsButton = document.getElementById("settingsButton");
+        const settingsPanel = document.createElement("div");
+        settingsPanel.className = "settings-panel hidden";
+        settingsPanel.innerHTML = `
+          <div class="settings-row">
+            <label>Background motion</label>
+            <button class="settings-toggle" data-setting="background" type="button">On</button>
+          </div>
+          <div class="settings-row">
+            <label>Rainbow studs</label>
+            <button class="settings-toggle" data-setting="rainbow" type="button">Off</button>
+          </div>
+          <div class="settings-row">
+            <label>Theme</label>
+            <button class="settings-toggle" data-setting="theme" type="button">Light</button>
+          </div>
+          <div class="settings-row">
+            <label>Background music</label>
+            <button class="settings-toggle" data-setting="music" type="button">Off</button>
+          </div>
+        `;
+
+        document.body.appendChild(settingsPanel);
+        settingsPanel.hidden = true;
+        const backgroundMusic = new Audio("Background%20Music.mp3");
+        backgroundMusic.preload = "none";
+        backgroundMusic.loop = true;
+        backgroundMusic.volume = 0.35;
 
         const hasValidSupabaseConfig =
           supabaseUrl.startsWith("https://") &&
@@ -137,6 +190,77 @@
           statusText.classList.toggle("error", isError);
         }
 
+        function getNextResetText() {
+          if (currentLeaderboardMode === "longtime") {
+            leaderboardResetText.textContent = "All time leaderboard";
+            return;
+          }
+
+          const now = new Date();
+
+          if (currentLeaderboardMode === "weekly") {
+            const next = new Date(now);
+            const day = next.getDay();
+            const diffToMonday = (day === 0 ? 6 : day - 1);
+            next.setHours(0, 1, 0, 0);
+            next.setDate(next.getDate() - diffToMonday);
+            if (next <= now) {
+              next.setDate(next.getDate() + 7);
+            }
+            leaderboardResetText.textContent = `Resets in ${formatCountdown(next.getTime() - now.getTime(), "weekly")}`;
+            return;
+          }
+
+          if (currentLeaderboardMode === "daily") {
+            const next = new Date(now);
+            next.setHours(23, 59, 0, 0);
+            if (next <= now) {
+              next.setDate(next.getDate() + 1);
+            }
+            leaderboardResetText.textContent = `Resets in ${formatCountdown(next.getTime() - now.getTime(), "daily")}`;
+            return;
+          }
+
+          if (currentLeaderboardMode === "hourly") {
+            const next = new Date(now);
+            next.setMinutes(59, 0, 0);
+            if (next <= now) {
+              next.setHours(next.getHours() + 1);
+              next.setMinutes(59, 0, 0);
+            }
+            leaderboardResetText.textContent = `Resets in ${formatCountdown(next.getTime() - now.getTime(), "hourly")}`;
+          }
+        }
+
+        function formatCountdown(ms, mode) {
+          const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+          const totalMinutes = Math.floor(totalSeconds / 60);
+          const minutes = totalMinutes % 60;
+          const seconds = totalSeconds % 60;
+
+          if (mode === "weekly") {
+            const days = Math.floor(totalMinutes / (24 * 60));
+            const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+            return `${days}d ${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m`;
+          }
+
+          if (mode === "daily") {
+            const hours = Math.floor(totalMinutes / 60);
+            return `${String(hours).padStart(2, "0")}h ${String(minutes).padStart(2, "0")}m`;
+          }
+
+          return `${String(totalMinutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+        }
+
+        function getLeaderboardCutoff() {
+          const modeConfig = leaderboardModes[currentLeaderboardMode];
+          if (!modeConfig || !modeConfig.hours) return null;
+
+          const cutoff = new Date();
+          cutoff.setHours(cutoff.getHours() - modeConfig.hours);
+          return cutoff;
+        }
+
         async function resolveLeaderboardTable() {
           if (!supabase) return null;
 
@@ -183,12 +307,18 @@
               return;
             }
 
-            const { data, error } = await supabase
+            let query = supabase
               .from(tableName)
-              .select("username, score")
+              .select("username, score, updated_at")
               .order("score", { ascending: false })
               .limit(10);
 
+            const cutoff = getLeaderboardCutoff();
+            if (cutoff) {
+              query = query.gte("updated_at", cutoff.toISOString());
+            }
+
+            const { data, error } = await query;
             if (error) throw error;
 
             leaderboardBody.innerHTML = "";
@@ -208,8 +338,10 @@
               const usernameCell = document.createElement("td");
               const scoreCell = document.createElement("td");
               const rank = index + 1;
+              const medalMap = { 1: "🥇", 2: "🥈", 3: "🥉" };
+              const badgeText = medalMap[rank] || rank;
 
-              rankCell.innerHTML = `<span class="rank-pill ${rank <= 3 ? "rank-top" : ""}">${rank}</span>`;
+              rankCell.innerHTML = `<span class="rank-pill ${rank <= 3 ? "rank-top" : ""}">${badgeText}</span>`;
               usernameCell.textContent = player.username;
               scoreCell.textContent = Number(player.score || 0).toLocaleString();
 
@@ -259,6 +391,115 @@
           await syncLeaderboard();
         }
 
+        function bindModeButtons() {
+          modeButtons.forEach((buttonEl) => {
+            buttonEl.addEventListener("click", async () => {
+              currentLeaderboardMode = buttonEl.dataset.mode;
+              modeButtons.forEach((btn) => btn.classList.toggle("active", btn === buttonEl));
+              const leaderboardPanel = document.querySelector(".leaderboard-panel");
+              leaderboardPanel.classList.remove("mode-switch");
+              void leaderboardPanel.offsetWidth;
+              leaderboardPanel.classList.add("mode-switch");
+              getNextResetText();
+              if (supabase) {
+                await syncLeaderboard();
+              }
+            });
+          });
+        }
+
+        function setTheme(theme) {
+          const isDark = theme === "dark";
+          document.body.classList.toggle("dark-mode", isDark);
+          document.body.classList.toggle("light-mode", !isDark);
+          localStorage.setItem(themeKey, theme);
+        }
+
+        function setBackgroundMotion(enabled) {
+          document.body.classList.toggle("background-paused", !enabled);
+          if (enabled) {
+            document.body.classList.remove("background-paused");
+            void document.body.offsetWidth;
+          }
+          localStorage.setItem(backgroundModeKey, enabled ? "on" : "off");
+        }
+
+        function setMusic(enabled) {
+          localStorage.setItem(musicKey, enabled ? "on" : "off");
+          if (enabled) {
+            void backgroundMusic.play().catch(() => {});
+          } else {
+            backgroundMusic.pause();
+            backgroundMusic.currentTime = 0;
+          }
+        }
+
+        function setRainbowMode(enabled) {
+          document.body.classList.toggle("rainbow-background", enabled);
+          localStorage.setItem("clickerRainbow", enabled ? "on" : "off");
+        }
+
+        function applySettingsState() {
+          const savedTheme = localStorage.getItem(themeKey) || "light";
+          const savedBackground = localStorage.getItem(backgroundModeKey) || "on";
+          const savedRainbow = localStorage.getItem("clickerRainbow") || "off";
+          const savedMusic = localStorage.getItem(musicKey) || "off";
+
+          setTheme(savedTheme);
+          setBackgroundMotion(savedBackground === "on");
+          setRainbowMode(savedRainbow === "on");
+
+          const toggleButtons = [...document.querySelectorAll(".settings-toggle")];
+          toggleButtons.forEach((toggle) => {
+            const key = toggle.dataset.setting;
+            if (key === "background") toggle.textContent = savedBackground === "on" ? "On" : "Off";
+            if (key === "rainbow") toggle.textContent = savedRainbow === "on" ? "On" : "Off";
+            if (key === "theme") toggle.textContent = savedTheme === "dark" ? "Dark" : "Light";
+            if (key === "music") toggle.textContent = savedMusic === "on" ? "On" : "Off";
+          });
+        }
+
+        function bindSettingsPanel() {
+          settingsButton.addEventListener("click", () => {
+            settingsPanel.hidden = !settingsPanel.hidden;
+            settingsPanel.classList.toggle("hidden", settingsPanel.hidden);
+          });
+
+          settingsPanel.addEventListener("click", (event) => {
+            const toggle = event.target.closest(".settings-toggle");
+            if (!toggle) return;
+
+            const setting = toggle.dataset.setting;
+            if (setting === "background") {
+              const next = document.body.classList.contains("background-paused");
+              setBackgroundMotion(next);
+              toggle.textContent = next ? "On" : "Off";
+            }
+
+            if (setting === "rainbow") {
+              const next = !document.body.classList.contains("rainbow-background");
+              setRainbowMode(next);
+              toggle.textContent = next ? "On" : "Off";
+            }
+
+            if (setting === "theme") {
+              const nextTheme = document.body.classList.contains("dark-mode") ? "light" : "dark";
+              setTheme(nextTheme);
+              toggle.textContent = nextTheme === "dark" ? "Dark" : "Light";
+            }
+
+            if (setting === "music") {
+              const next = localStorage.getItem(musicKey) !== "on";
+              setMusic(next);
+              toggle.textContent = next ? "On" : "Off";
+            }
+          });
+        }
+
+        bindSettingsPanel();
+        applySettingsState();
+        getNextResetText();
+
         let score = getScore();
 
         function render() {
@@ -267,6 +508,12 @@
         }
 
         button.addEventListener("click", () => {
+          button.classList.remove("click-pop");
+          void button.offsetWidth;
+          button.classList.add("click-pop");
+          if (localStorage.getItem(musicKey) === "on") {
+            void backgroundMusic.play().catch(() => {});
+          }
           score = getScore() + 1;
           localStorage.setItem(scoreKey, String(score));
           updateTotal();
@@ -276,6 +523,8 @@
             void saveScoreToLeaderboard();
           }
         });
+
+        bindModeButtons();
 
         if (!supabase) {
           leaderboardBody.innerHTML = `
@@ -288,6 +537,9 @@
         }
 
         render();
+        if (supabase) {
+          setInterval(getNextResetText, 1000);
+        }
       })();
     </script>
   </body>
