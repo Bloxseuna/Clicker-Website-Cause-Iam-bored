@@ -81,6 +81,34 @@
           </table>
         </div>
       </aside>
+
+      <section class="store-panel glass-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Click shop</p>
+            <h2>Item Store</h2>
+          </div>
+          <button id="refreshStoreButton" class="secondary-button" type="button">Refresh · 30 clicks</button>
+        </div>
+        <p id="storeStatus" class="panel-status">New stock every refresh.</p>
+        <div id="storeGrid" class="store-grid"></div>
+      </section>
+
+      <section class="profile-panel glass-card">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Player lookup</p>
+            <h2>Search Profiles</h2>
+          </div>
+        </div>
+        <form id="profileSearchForm" class="profile-search-form">
+          <input id="profileSearchInput" type="search" placeholder="Search a user-##########" autocomplete="off" />
+          <button class="secondary-button" type="submit">Search</button>
+        </form>
+        <div id="profileResult" class="profile-result">
+          <p class="panel-status">Search for a player to view their stats and inventory.</p>
+        </div>
+      </section>
     </main>
 
     <script>
@@ -88,6 +116,10 @@
         const usernameKey = "clickerUsername";
         const deviceIdKey = "clickerDeviceId";
         const scoreKey = "clickerScore";
+        const clickHistoryKey = "clickerClickHistory";
+        const inventoryKey = "clickerInventory";
+        const equippedTitleKey = "clickerEquippedTitle";
+        const storeSlotsKey = "clickerStoreSlots";
         const themeKey = "clickerTheme";
         const backgroundModeKey = "clickerBackgroundMode";
         const musicKey = "clickerMusic";
@@ -110,6 +142,12 @@
         const leaderboardBody = document.getElementById("leaderboardBody");
         const leaderboardResetText = document.getElementById("leaderboardResetText");
         const modeButtons = [...document.querySelectorAll(".leaderboard-mode")];
+        const storeGrid = document.getElementById("storeGrid");
+        const storeStatus = document.getElementById("storeStatus");
+        const refreshStoreButton = document.getElementById("refreshStoreButton");
+        const profileSearchForm = document.getElementById("profileSearchForm");
+        const profileSearchInput = document.getElementById("profileSearchInput");
+        const profileResult = document.getElementById("profileResult");
         const settingsButton = document.getElementById("settingsButton");
         const settingsPanel = document.createElement("div");
         settingsPanel.className = "settings-panel hidden";
@@ -138,6 +176,42 @@
         backgroundMusic.preload = "none";
         backgroundMusic.loop = true;
         backgroundMusic.volume = 0.35;
+
+        const rarityData = [
+          { name: "Common", color: "#a9b7c8", multiplier: 1 },
+          { name: "Uncommon", color: "#55d68d", multiplier: 2 },
+          { name: "Rare", color: "#55b9ff", multiplier: 4 },
+          { name: "Epic", color: "#ad7aff", multiplier: 8 },
+          { name: "Legendary", color: "#ffc94d", multiplier: 16 },
+        ];
+        const itemIcons = ["🧱", "⚡", "🌙", "🔥", "💎", "🎯", "🛠️", "🚀", "👑", "🌈"];
+        const itemPrefixes = ["Turbo", "Pixel", "Neon", "Chrome", "Mystic", "Rocket", "Shadow", "Golden", "Cosmic", "Block"];
+        const itemNouns = ["Brick", "Core", "Hammer", "Crown", "Booster", "Badge", "Cube", "Glider", "Relic", "Spark"];
+        const titlePrefixes = ["Lord", "Master", "Captain", "Ultra", "Block", "Neon", "Elite", "Turbo", "Cosmic", "Royal"];
+        const titleNouns = ["Builder", "Clicker", "Crusher", "Legend", "Architect"];
+
+        function createCatalog() {
+          return Array.from({ length: 500 }, (_, index) => {
+            const isTitle = index < 50;
+            const rarity = rarityData[index % rarityData.length];
+            const name = isTitle
+              ? `${titlePrefixes[Math.floor(index / titleNouns.length)]} ${titleNouns[index % titleNouns.length]}`
+              : `${itemPrefixes[index % itemPrefixes.length]} ${itemNouns[Math.floor(index / itemPrefixes.length) % itemNouns.length]}`;
+            const price = Math.max(10, (index + 1) * rarity.multiplier * (isTitle ? 4 : 1));
+            return {
+              id: `item-${index + 1}`,
+              name: isTitle ? `Title: ${name}` : name,
+              icon: itemIcons[index % itemIcons.length],
+              rarity: rarity.name,
+              color: rarity.color,
+              price,
+              isTitle,
+              effect: isTitle ? `title-effect-${(index % 10) + 1}` : "",
+            };
+          });
+        }
+
+        const catalog = createCatalog();
 
         const hasValidSupabaseConfig =
           supabaseUrl.startsWith("https://") &&
@@ -188,6 +262,171 @@
         function setStatus(message, isError = false) {
           statusText.textContent = message;
           statusText.classList.toggle("error", isError);
+        }
+
+        function readJson(key, fallback) {
+          try {
+            return JSON.parse(localStorage.getItem(key) || "null") || fallback;
+          } catch {
+            return fallback;
+          }
+        }
+
+        function getInventory() {
+          return readJson(inventoryKey, []);
+        }
+
+        function getStoreSlots() {
+          let slots = readJson(storeSlotsKey, null);
+          if (!Array.isArray(slots) || slots.length !== 10) {
+            slots = Array.from({ length: 10 }, () => Math.floor(Math.random() * catalog.length));
+            localStorage.setItem(storeSlotsKey, JSON.stringify(slots));
+          }
+          return slots;
+        }
+
+        function getEquippedTitle() {
+          const titleId = localStorage.getItem(equippedTitleKey);
+          return catalog.find((item) => item.id === titleId && item.isTitle) || null;
+        }
+
+        function renderStore() {
+          if (!storeGrid) return;
+          storeGrid.innerHTML = "";
+          getStoreSlots().forEach((slot) => {
+            const item = catalog[slot];
+            const owned = getInventory().includes(item.id);
+            const card = document.createElement("article");
+            card.className = "store-item";
+            card.style.setProperty("--rarity-color", item.color);
+            card.innerHTML = `
+              <div class="item-icon">${item.icon}</div>
+              <div class="item-copy">
+                <span class="item-rarity">${item.rarity}${item.isTitle ? " · TITLE" : ""}</span>
+                <h3>${item.name}</h3>
+                <p>${item.price.toLocaleString()} clicks</p>
+              </div>
+              <button class="buy-button" type="button" data-item-id="${item.id}" ${owned ? "disabled" : ""}>${owned ? "Owned" : "Buy"}</button>
+            `;
+            storeGrid.appendChild(card);
+          });
+        }
+
+        function renderInventory(inventory, target) {
+          if (!inventory.length) {
+            target.innerHTML = `<p class="panel-status">No items collected yet.</p>`;
+            return;
+          }
+          target.innerHTML = inventory.map((item) => `
+            <span class="inventory-chip" style="--rarity-color: ${item.color}">
+              ${item.icon} ${item.name}
+              ${item.isTitle ? `<button class="equip-title" type="button" data-title-id="${item.id}">${getEquippedTitle()?.id === item.id ? "Equipped" : "Equip"}</button>` : ""}
+            </span>
+          `).join("");
+        }
+
+        function getClickHistory() {
+          return readJson(clickHistoryKey, []);
+        }
+
+        function getStats(history, ever) {
+          const now = new Date();
+          const hourStart = new Date(now);
+          hourStart.setMinutes(0, 0, 0);
+          const dayStart = new Date(now);
+          dayStart.setHours(0, 0, 0, 0);
+          const weekStart = new Date(dayStart);
+          const daysFromMonday = (weekStart.getDay() + 6) % 7;
+          weekStart.setDate(weekStart.getDate() - daysFromMonday);
+          return {
+            hourly: history.filter((stamp) => stamp >= hourStart.getTime()).length,
+            daily: history.filter((stamp) => stamp >= dayStart.getTime()).length,
+            weekly: history.filter((stamp) => stamp >= weekStart.getTime()).length,
+            ever,
+          };
+        }
+
+        function renderProfile(username, stats, inventory, isLocal) {
+          const title = isLocal ? getEquippedTitle() : null;
+          profileResult.innerHTML = `
+            <div class="profile-card">
+              <div class="profile-avatar">${title?.icon || "👤"}</div>
+              <div>
+                <p class="profile-name">${username}</p>
+                <p class="profile-title ${title?.effect || ""}">${title ? title.name : "Clicker"}</p>
+              </div>
+            </div>
+            <div class="profile-stats">
+              <span><b>${stats.hourly.toLocaleString()}</b> Hour</span>
+              <span><b>${stats.daily.toLocaleString()}</b> Today</span>
+              <span><b>${stats.weekly.toLocaleString()}</b> Week</span>
+              <span><b>${stats.ever.toLocaleString()}</b> Ever</span>
+            </div>
+            <h3 class="inventory-heading">Inventory</h3>
+            <div class="inventory-list" id="profileInventory"></div>
+          `;
+          renderInventory(inventory, document.getElementById("profileInventory"));
+        }
+
+        async function searchProfile(username) {
+          const cleanUsername = username.trim();
+          if (!cleanUsername) return;
+          if (cleanUsername.toLowerCase() === getUsername().toLowerCase()) {
+            renderProfile(getUsername(), getStats(getClickHistory(), getScore()), getInventory().map((id) => catalog.find((item) => item.id === id)).filter(Boolean), true);
+            return;
+          }
+          if (!supabase) {
+            profileResult.innerHTML = `<p class="panel-status">No local profile found for ${cleanUsername}.</p>`;
+            return;
+          }
+          profileResult.innerHTML = `<p class="panel-status">Searching for ${cleanUsername}...</p>`;
+          const { data, error } = await supabase.from(activeLeaderboardTable).select("username, score").ilike("username", cleanUsername).limit(1);
+          if (error || !data?.length) {
+            profileResult.innerHTML = `<p class="panel-status">No profile found for ${cleanUsername}.</p>`;
+            return;
+          }
+          renderProfile(data[0].username, { hourly: 0, daily: 0, weekly: 0, ever: Number(data[0].score || 0) }, [], false);
+        }
+
+        function bindStoreAndProfiles() {
+          renderStore();
+          refreshStoreButton.addEventListener("click", () => {
+            if (getScore() < 30) {
+              storeStatus.textContent = "You need 30 clicks to refresh the store.";
+              return;
+            }
+            localStorage.setItem(scoreKey, String(getScore() - 30));
+            const slots = Array.from({ length: 10 }, () => Math.floor(Math.random() * catalog.length));
+            localStorage.setItem(storeSlotsKey, JSON.stringify(slots));
+            updateTotal();
+            storeStatus.textContent = "Fresh stock unlocked.";
+            renderStore();
+          });
+          storeGrid.addEventListener("click", (event) => {
+            const buyButton = event.target.closest(".buy-button");
+            if (!buyButton || buyButton.disabled) return;
+            const item = catalog.find((entry) => entry.id === buyButton.dataset.itemId);
+            if (getScore() < item.price) {
+              storeStatus.textContent = `You need ${item.price.toLocaleString()} clicks for ${item.name}.`;
+              return;
+            }
+            localStorage.setItem(scoreKey, String(getScore() - item.price));
+            localStorage.setItem(inventoryKey, JSON.stringify([...getInventory(), item.id]));
+            updateTotal();
+            storeStatus.textContent = `${item.name} added to your inventory.`;
+            renderStore();
+          });
+          profileSearchForm.addEventListener("submit", (event) => {
+            event.preventDefault();
+            void searchProfile(profileSearchInput.value);
+          });
+          profileResult.addEventListener("click", (event) => {
+            const equipButton = event.target.closest(".equip-title");
+            if (!equipButton) return;
+            localStorage.setItem(equippedTitleKey, equipButton.dataset.titleId);
+            searchProfile(getUsername());
+            renderStore();
+          });
         }
 
         function getNextResetText() {
@@ -342,7 +581,14 @@
               const badgeText = medalMap[rank] || rank;
 
               rankCell.innerHTML = `<span class="rank-pill ${rank <= 3 ? "rank-top" : ""}">${badgeText}</span>`;
+              const title = player.username === getUsername() ? getEquippedTitle() : null;
               usernameCell.textContent = player.username;
+              if (title) {
+                const titleLabel = document.createElement("span");
+                titleLabel.className = `equipped-title ${title.effect}`;
+                titleLabel.textContent = title.name;
+                usernameCell.append(" ", titleLabel);
+              }
               scoreCell.textContent = Number(player.score || 0).toLocaleString();
 
               row.append(rankCell, usernameCell, scoreCell);
@@ -501,6 +747,7 @@
         getNextResetText();
 
         let score = getScore();
+        bindStoreAndProfiles();
 
         function render() {
           updateTotal();
@@ -516,6 +763,9 @@
           }
           score = getScore() + 1;
           localStorage.setItem(scoreKey, String(score));
+          const history = getClickHistory();
+          history.push(Date.now());
+          localStorage.setItem(clickHistoryKey, JSON.stringify(history.slice(-10000)));
           updateTotal();
           setStatus(`Excellent! ${getUsername()} is on fire.`);
 
