@@ -73,6 +73,7 @@
     <script>
       (() => {
         const usernameKey = "clickerUsername";
+        const deviceIdKey = "clickerDeviceId";
         const scoreKey = "clickerScore";
         const supabaseUrl = "https://taiplbyjbzylhodxfqri.supabase.co";
         const supabaseAnonKey = "sb_publishable_9m60t8PkiAelfPBG7wCjpQ_U9Zkm9Ry";
@@ -98,17 +99,26 @@
             ? window.supabase.createClient(supabaseUrl, supabaseAnonKey)
             : null;
 
-        function generateUsername() {
+        function generateDeviceId() {
           const randomPart = Math.floor(Math.random() * 10000000000)
             .toString()
             .padStart(10, "0");
           return `user-${randomPart}`;
         }
 
+        function getDeviceId() {
+          let deviceId = localStorage.getItem(deviceIdKey);
+          if (!deviceId) {
+            deviceId = generateDeviceId();
+            localStorage.setItem(deviceIdKey, deviceId);
+          }
+          return deviceId;
+        }
+
         function getUsername() {
           let username = localStorage.getItem(usernameKey);
           if (!username) {
-            username = generateUsername();
+            username = getDeviceId();
             localStorage.setItem(usernameKey, username);
           }
           return username;
