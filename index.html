@@ -25,7 +25,6 @@
       <section class="game-panel glass-card">
         <header class="topbar">
           <div class="brand-wrap">
-            <span class="brand-badge">⚡</span>
             <div>
               <h1>Untitled Clicker or SMT</h1>
             </div>
@@ -38,8 +37,8 @@
           <p id="statusText" class="status-text">Enter a username to begin.</p>
         </div>
 
-        <button id="clickButton" class="click-button" type="button" aria-label="Click me">
-          CLICK ME
+        <button id="clickButton" class="click-button" type="button" aria-label="Build block">
+          BUILD!
         </button>
       </section>
 
@@ -74,34 +73,209 @@
     <script>
       (() => {
         const usernameKey = "clickerUsername";
+        const scoreKey = "clickerScore";
+        const supabaseUrl = "https://taiplbyjbzylhodxfqri.supabase.co";
+        const supabaseAnonKey = "sb_publishable_9m60t8PkiAelfPBG7wCjpQ_U9Zkm9Ry";
+        const leaderboardCandidates = ["leaderboard", "leaderboards"];
+
+        let activeLeaderboardTable = leaderboardCandidates[0];
+
         const button = document.getElementById("clickButton");
         const totalClicks = document.getElementById("totalClicks");
         const statusText = document.getElementById("statusText");
+        const leaderboardBody = document.getElementById("leaderboardBody");
 
-        const getUsername = () => {
+        const hasValidSupabaseConfig =
+          supabaseUrl.startsWith("https://") &&
+          !supabaseUrl.includes("YOUR_PROJECT_REF") &&
+          supabaseAnonKey.length > 20 &&
+          !supabaseAnonKey.includes("YOUR_ANON_KEY");
+
+        const supabase =
+          typeof window !== "undefined" &&
+          window.supabase &&
+          hasValidSupabaseConfig
+            ? window.supabase.createClient(supabaseUrl, supabaseAnonKey)
+            : null;
+
+        function generateUsername() {
+          const randomPart = Math.floor(Math.random() * 10000000000)
+            .toString()
+            .padStart(10, "0");
+          return `user-${randomPart}`;
+        }
+
+        function getUsername() {
           let username = localStorage.getItem(usernameKey);
-
           if (!username) {
-            username = `user-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+            username = generateUsername();
             localStorage.setItem(usernameKey, username);
           }
-
           return username;
-        };
+        }
 
-        let score = Number(localStorage.getItem("clickerScore") || 0);
+        function getScore() {
+          return Number(localStorage.getItem(scoreKey) || 0);
+        }
 
-        const render = () => {
-          totalClicks.textContent = score.toLocaleString();
-          statusText.textContent = `Player: ${getUsername()}. Click to boost your score!`;
-        };
+        function updateTotal() {
+          totalClicks.textContent = getScore().toLocaleString();
+        }
+
+        function setStatus(message, isError = false) {
+          statusText.textContent = message;
+          statusText.classList.toggle("error", isError);
+        }
+
+        async function resolveLeaderboardTable() {
+          if (!supabase) return null;
+
+          for (const tableName of leaderboardCandidates) {
+            try {
+              const { error } = await supabase
+                .from(tableName)
+                .select("username")
+                .limit(1);
+
+              if (!error) {
+                activeLeaderboardTable = tableName;
+                return tableName;
+              }
+
+              if (error.code === "PGRST205" || error.code === "42P01") {
+                continue;
+              }
+
+              throw error;
+            } catch (error) {
+              if (error && (error.code === "PGRST205" || error.code === "42P01")) {
+                continue;
+              }
+
+              throw error;
+            }
+          }
+
+          return null;
+        }
+
+        async function syncLeaderboard() {
+          if (!supabase || !leaderboardBody) return;
+
+          try {
+            const tableName = (await resolveLeaderboardTable()) || activeLeaderboardTable;
+            if (!tableName) {
+              leaderboardBody.innerHTML = `
+                <tr>
+                  <td colspan="3" class="table-empty">Create the public leaderboard table in Supabase to enable live scores.</td>
+                </tr>
+              `;
+              return;
+            }
+
+            const { data, error } = await supabase
+              .from(tableName)
+              .select("username, score")
+              .order("score", { ascending: false })
+              .limit(10);
+
+            if (error) throw error;
+
+            leaderboardBody.innerHTML = "";
+
+            if (!data || data.length === 0) {
+              leaderboardBody.innerHTML = `
+                <tr>
+                  <td colspan="3" class="table-empty">No scores yet. Be the first!</td>
+                </tr>
+              `;
+              return;
+            }
+
+            data.forEach((player, index) => {
+              const row = document.createElement("tr");
+              const rankCell = document.createElement("td");
+              const usernameCell = document.createElement("td");
+              const scoreCell = document.createElement("td");
+              const rank = index + 1;
+
+              rankCell.innerHTML = `<span class="rank-pill ${rank <= 3 ? "rank-top" : ""}">${rank}</span>`;
+              usernameCell.textContent = player.username;
+              scoreCell.textContent = Number(player.score || 0).toLocaleString();
+
+              row.append(rankCell, usernameCell, scoreCell);
+              leaderboardBody.appendChild(row);
+            });
+          } catch (error) {
+            console.error("Leaderboard sync failed:", error);
+            leaderboardBody.innerHTML = `
+              <tr>
+                <td colspan="3" class="table-empty">Leaderboard unavailable right now.</td>
+              </tr>
+            `;
+          }
+        }
+
+        async function saveScoreToLeaderboard() {
+          if (!supabase) return;
+
+          const tableName = (await resolveLeaderboardTable()) || activeLeaderboardTable;
+          if (!tableName) {
+            setStatus("Create the public leaderboard table in Supabase to publish your clicks.", true);
+            return;
+          }
+
+          const username = getUsername().replace(/[^a-zA-Z0-9 _-]/g, "").trim();
+          const scoreValue = getScore();
+
+          const { error } = await supabase
+            .from(tableName)
+            .upsert(
+              {
+                username,
+                score: scoreValue,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "username" }
+            );
+
+          if (error) {
+            console.error("Score save failed:", error);
+            setStatus("Public leaderboard sync failed. Your score is still saved locally.", true);
+            return;
+          }
+
+          setStatus(`Score synced for ${username}.`);
+          await syncLeaderboard();
+        }
+
+        let score = getScore();
+
+        function render() {
+          updateTotal();
+          setStatus(`Player: ${getUsername()}. Click to boost your score!`);
+        }
 
         button.addEventListener("click", () => {
-          score += 1;
-          localStorage.setItem("clickerScore", String(score));
-          totalClicks.textContent = score.toLocaleString();
-          statusText.textContent = `Excellent! ${getUsername()} is on fire.`;
+          score = getScore() + 1;
+          localStorage.setItem(scoreKey, String(score));
+          updateTotal();
+          setStatus(`Excellent! ${getUsername()} is on fire.`);
+
+          if (supabase) {
+            void saveScoreToLeaderboard();
+          }
         });
+
+        if (!supabase) {
+          leaderboardBody.innerHTML = `
+            <tr>
+              <td colspan="3" class="table-empty">Offline mode: clicks work locally.</td>
+            </tr>
+          `;
+        } else {
+          syncLeaderboard();
+        }
 
         render();
       })();

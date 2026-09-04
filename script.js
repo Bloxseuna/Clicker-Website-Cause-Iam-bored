@@ -1,6 +1,7 @@
-// IMPORTANT: Replace these placeholders with your actual Supabase project details before deploying.
-const supabaseUrl = "https://YOUR_PROJECT_REF.supabase.co";
-const supabaseAnonKey = "YOUR_ANON_KEY";
+// Supabase support is optional and will only activate when the project URL is filled in.
+// The app still works completely offline when opened as a direct file.
+const supabaseUrl = "https://taiplbyjbzylhodxfqri.supabase.co";
+const supabaseAnonKey = "sb_publishable_9m60t8PkiAelfPBG7wCjpQ_U9Zkm9Ry";
 
 const leaderboardTable = "leaderboard";
 const usernameStorageKey = "clickerUsername";
