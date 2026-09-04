@@ -62,6 +62,8 @@
           <button class="leaderboard-mode" type="button" data-mode="hourly">Hourly</button>
         </div>
 
+        <button id="banlandButton" class="banland-button" type="button">Banland</button>
+
         <div id="leaderboardResetText" class="leaderboard-reset-text">Resets in —</div>
 
         <div class="table-wrap">
@@ -102,7 +104,10 @@
           </div>
         </div>
         <form id="profileSearchForm" class="profile-search-form">
-          <input id="profileSearchInput" type="search" placeholder="Search a user-##########" autocomplete="off" />
+          <div class="profile-search-input-wrap">
+            <input id="profileSearchInput" type="search" placeholder="Search a user-##########" autocomplete="off" />
+            <div id="profileSuggestions" class="profile-suggestions" hidden></div>
+          </div>
           <button class="secondary-button" type="submit">Search</button>
         </form>
         <div id="profileResult" class="profile-result">
@@ -110,6 +115,56 @@
         </div>
       </section>
     </main>
+
+    <div id="leaderboardUserModal" class="user-action-modal" hidden>
+      <div class="user-action-dialog" role="dialog" aria-modal="true" aria-labelledby="selectedUserName">
+        <button id="closeUserModal" class="modal-close" type="button" aria-label="Close user actions">×</button>
+        <p class="eyebrow">Leaderboard player</p>
+        <h2 id="selectedUserName">Player</h2>
+        <p class="panel-status">Choose an action for this profile.</p>
+        <div class="user-action-buttons">
+          <button id="searchSelectedUser" class="secondary-button" type="button">Search user</button>
+          <button id="banSelectedUser" class="danger-button" type="button">Ban user</button>
+          <button id="deleteSelectedUser" class="danger-button" type="button">Delete user</button>
+        </div>
+        <div id="deletePinArea" class="delete-pin-area" hidden>
+          <label for="deletePinInput">Enter admin PIN</label>
+          <input id="deletePinInput" type="password" inputmode="numeric" maxlength="4" autocomplete="off" />
+          <button id="confirmDeleteUser" class="danger-button" type="button">Confirm delete</button>
+          <p id="deleteUserStatus" class="panel-status"></p>
+        </div>
+        <div id="banPinArea" class="delete-pin-area" hidden>
+          <label for="banPinInput">Enter admin PIN to ban</label>
+          <input id="banPinInput" type="password" inputmode="numeric" maxlength="4" autocomplete="off" />
+          <button id="confirmBanUser" class="danger-button" type="button">Confirm ban</button>
+          <p id="banUserStatus" class="panel-status"></p>
+        </div>
+      </div>
+    </div>
+
+    <div id="banlandModal" class="user-action-modal" hidden>
+      <div class="user-action-dialog banland-dialog" role="dialog" aria-modal="true" aria-labelledby="banlandTitle">
+        <button id="closeBanland" class="modal-close" type="button" aria-label="Close Banland">×</button>
+        <p class="eyebrow">Moderation list</p>
+        <h2 id="banlandTitle">Banland</h2>
+        <p class="panel-status">Banned profiles are visible here.</p>
+        <div id="bannedUsersList" class="banned-users-list"></div>
+      </div>
+    </div>
+
+    <div id="banAccessGate" class="user-action-modal" hidden>
+      <div class="user-action-dialog" role="dialog" aria-modal="true" aria-labelledby="banGateTitle">
+        <p class="eyebrow">Access restricted</p>
+        <h2 id="banGateTitle">Your account is permanently banned</h2>
+        <p class="panel-status">Enter the access PIN to continue.</p>
+        <div class="delete-pin-area">
+          <label for="banAccessPin">Access PIN</label>
+          <input id="banAccessPin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" />
+          <button id="unlockBannedAccount" class="secondary-button" type="button">Enter site</button>
+          <p id="banAccessStatus" class="panel-status"></p>
+        </div>
+      </div>
+    </div>
 
     <script>
       (() => {
@@ -147,7 +202,20 @@
         const refreshStoreButton = document.getElementById("refreshStoreButton");
         const profileSearchForm = document.getElementById("profileSearchForm");
         const profileSearchInput = document.getElementById("profileSearchInput");
+        const profileSuggestions = document.getElementById("profileSuggestions");
         const profileResult = document.getElementById("profileResult");
+        const leaderboardUserModal = document.getElementById("leaderboardUserModal");
+        const selectedUserName = document.getElementById("selectedUserName");
+        const deletePinArea = document.getElementById("deletePinArea");
+        const deletePinInput = document.getElementById("deletePinInput");
+        const deleteUserStatus = document.getElementById("deleteUserStatus");
+        const banPinArea = document.getElementById("banPinArea");
+        const banPinInput = document.getElementById("banPinInput");
+        const banUserStatus = document.getElementById("banUserStatus");
+        const banlandModal = document.getElementById("banlandModal");
+        const bannedUsersList = document.getElementById("bannedUsersList");
+        const banAccessGate = document.getElementById("banAccessGate");
+        let selectedLeaderboardUser = "";
         const settingsButton = document.getElementById("settingsButton");
         const settingsPanel = document.createElement("div");
         settingsPanel.className = "settings-panel hidden";
@@ -212,6 +280,34 @@
         }
 
         const catalog = createCatalog();
+
+        function getLocalInventoryItems() {
+          return getInventory().map((id) => catalog.find((item) => item.id === id)).filter(Boolean);
+        }
+
+        async function loadProfileSuggestions() {
+          if (!profileSuggestions) return;
+          profileSuggestions.innerHTML = "";
+          let usernames = [getUsername()];
+          if (supabase) {
+            await resolveLeaderboardTable();
+            const { data } = await supabase
+              .from(activeLeaderboardTable)
+              .select("username")
+              .order("score", { ascending: false })
+              .limit(10);
+            usernames = [...new Set([getUsername(), ...(data || []).map((player) => player.username)])].slice(0, 10);
+          }
+          usernames.forEach((username) => {
+            const suggestion = document.createElement("button");
+            suggestion.className = "profile-suggestion";
+            suggestion.type = "button";
+            suggestion.dataset.username = username;
+            suggestion.textContent = username;
+            profileSuggestions.appendChild(suggestion);
+          });
+          profileSuggestions.hidden = true;
+        }
 
         const hasValidSupabaseConfig =
           supabaseUrl.startsWith("https://") &&
@@ -346,8 +442,8 @@
           };
         }
 
-        function renderProfile(username, stats, inventory, isLocal) {
-          const title = isLocal ? getEquippedTitle() : null;
+        function renderProfile(username, stats, inventory, isLocal, equippedTitleId = null) {
+          const title = isLocal ? getEquippedTitle() : catalog.find((item) => item.id === equippedTitleId && item.isTitle) || null;
           profileResult.innerHTML = `
             <div class="profile-card">
               <div class="profile-avatar">${title?.icon || "👤"}</div>
@@ -372,7 +468,7 @@
           const cleanUsername = username.trim();
           if (!cleanUsername) return;
           if (cleanUsername.toLowerCase() === getUsername().toLowerCase()) {
-            renderProfile(getUsername(), getStats(getClickHistory(), getScore()), getInventory().map((id) => catalog.find((item) => item.id === id)).filter(Boolean), true);
+            renderProfile(getUsername(), getStats(getClickHistory(), getScore()), getLocalInventoryItems(), true);
             return;
           }
           if (!supabase) {
@@ -380,12 +476,30 @@
             return;
           }
           profileResult.innerHTML = `<p class="panel-status">Searching for ${cleanUsername}...</p>`;
-          const { data, error } = await supabase.from(activeLeaderboardTable).select("username, score").ilike("username", cleanUsername).limit(1);
+          const { data, error } = await supabase
+            .from(activeLeaderboardTable)
+            .select("username, score, hourly_clicks, daily_clicks, weekly_clicks, inventory, equipped_title")
+            .ilike("username", cleanUsername)
+            .limit(1);
           if (error || !data?.length) {
             profileResult.innerHTML = `<p class="panel-status">No profile found for ${cleanUsername}.</p>`;
             return;
           }
-          renderProfile(data[0].username, { hourly: 0, daily: 0, weekly: 0, ever: Number(data[0].score || 0) }, [], false);
+          const remoteInventory = Array.isArray(data[0].inventory)
+            ? data[0].inventory.map((id) => catalog.find((item) => item.id === id)).filter(Boolean)
+            : [];
+          renderProfile(
+            data[0].username,
+            {
+              hourly: Number(data[0].hourly_clicks || 0),
+              daily: Number(data[0].daily_clicks || 0),
+              weekly: Number(data[0].weekly_clicks || 0),
+              ever: Number(data[0].score || 0),
+            },
+            remoteInventory,
+            false,
+            data[0].equipped_title
+          );
         }
 
         function bindStoreAndProfiles() {
@@ -415,6 +529,7 @@
             updateTotal();
             storeStatus.textContent = `${item.name} added to your inventory.`;
             renderStore();
+            void saveScoreToLeaderboard();
           });
           profileSearchForm.addEventListener("submit", (event) => {
             event.preventDefault();
@@ -426,6 +541,7 @@
             localStorage.setItem(equippedTitleKey, equipButton.dataset.titleId);
             searchProfile(getUsername());
             renderStore();
+            void saveScoreToLeaderboard();
           });
         }
 
@@ -549,6 +665,7 @@
             let query = supabase
               .from(tableName)
               .select("username, score, updated_at")
+              .eq("banned", false)
               .order("score", { ascending: false })
               .limit(10);
 
@@ -557,7 +674,19 @@
               query = query.gte("updated_at", cutoff.toISOString());
             }
 
-            const { data, error } = await query;
+            let response = await query;
+            if (response.error?.code === "42703") {
+              query = supabase
+                .from(tableName)
+                .select("username, score, updated_at")
+                .order("score", { ascending: false })
+                .limit(10);
+              if (cutoff) {
+                query = query.gte("updated_at", cutoff.toISOString());
+              }
+              response = await query;
+            }
+            const { data, error } = response;
             if (error) throw error;
 
             leaderboardBody.innerHTML = "";
@@ -573,6 +702,8 @@
 
             data.forEach((player, index) => {
               const row = document.createElement("tr");
+              row.className = "leaderboard-row-selectable";
+              row.dataset.username = player.username;
               const rankCell = document.createElement("td");
               const usernameCell = document.createElement("td");
               const scoreCell = document.createElement("td");
@@ -615,6 +746,7 @@
 
           const username = getUsername().replace(/[^a-zA-Z0-9 _-]/g, "").trim();
           const scoreValue = getScore();
+          const stats = getStats(getClickHistory(), scoreValue);
 
           const { error } = await supabase
             .from(tableName)
@@ -622,12 +754,30 @@
               {
                 username,
                 score: scoreValue,
+                hourly_clicks: stats.hourly,
+                daily_clicks: stats.daily,
+                weekly_clicks: stats.weekly,
+                inventory: getInventory(),
+                equipped_title: getEquippedTitle()?.id || null,
                 updated_at: new Date().toISOString(),
               },
               { onConflict: "username" }
             );
 
           if (error) {
+            if (error.code === "PGRST204") {
+              const fallback = await supabase
+                .from(tableName)
+                .upsert(
+                  { username, score: scoreValue, updated_at: new Date().toISOString() },
+                  { onConflict: "username" }
+                );
+              if (!fallback.error) {
+                setStatus(`Score synced for ${username}. Add the profile columns in Supabase for public inventory.`);
+                await syncLeaderboard();
+                return;
+              }
+            }
             console.error("Score save failed:", error);
             setStatus("Public leaderboard sync failed. Your score is still saved locally.", true);
             return;
@@ -635,6 +785,239 @@
 
           setStatus(`Score synced for ${username}.`);
           await syncLeaderboard();
+        }
+
+        function closeUserModal() {
+          leaderboardUserModal.hidden = true;
+          deletePinArea.hidden = true;
+          banPinArea.hidden = true;
+          deletePinInput.value = "";
+          banPinInput.value = "";
+          deleteUserStatus.textContent = "";
+          banUserStatus.textContent = "";
+        }
+
+        function openUserModal(username) {
+          selectedLeaderboardUser = username;
+          selectedUserName.textContent = username;
+          leaderboardUserModal.hidden = false;
+          deletePinArea.hidden = true;
+          banPinArea.hidden = true;
+          deletePinInput.value = "";
+          banPinInput.value = "";
+          deleteUserStatus.textContent = "";
+          banUserStatus.textContent = "";
+        }
+
+        async function deleteSelectedLeaderboardUser() {
+          if (!selectedLeaderboardUser) return;
+          if (deletePinInput.value !== "2483") {
+            deleteUserStatus.textContent = "Incorrect PIN.";
+            return;
+          }
+          if (!supabase) {
+            deleteUserStatus.textContent = "Deletion needs the public Supabase connection.";
+            return;
+          }
+
+          deleteUserStatus.textContent = "Deleting profile...";
+          const { error } = await supabase
+            .from(activeLeaderboardTable)
+            .delete()
+            .eq("username", selectedLeaderboardUser);
+          if (error) {
+            deleteUserStatus.textContent = error.code === "42501"
+              ? "Delete blocked by Supabase RLS. Add the DELETE policy shown below."
+              : `Delete failed: ${error.message || "Supabase rejected the request."}`;
+            return;
+          }
+          closeUserModal();
+          await syncLeaderboard();
+          await loadProfileSuggestions();
+        }
+
+        function closeBanland() {
+          banlandModal.hidden = true;
+        }
+
+        async function loadBanland() {
+          banlandModal.hidden = false;
+          bannedUsersList.innerHTML = `<p class="panel-status">Loading banned users...</p>`;
+          if (!supabase) {
+            bannedUsersList.innerHTML = `<p class="panel-status">Banland needs the public Supabase connection.</p>`;
+            return;
+          }
+          const { data, error } = await supabase
+            .from(activeLeaderboardTable)
+            .select("username, banned_at")
+            .eq("banned", true)
+            .order("banned_at", { ascending: false });
+          if (error) {
+            bannedUsersList.innerHTML = `<p class="panel-status">Add the banned columns in Supabase first.</p>`;
+            return;
+          }
+          if (!data?.length) {
+            bannedUsersList.innerHTML = `<p class="panel-status">No permanently banned users.</p>`;
+            return;
+          }
+          bannedUsersList.innerHTML = data.map((user) => `
+            <div class="banned-user-row">
+              <span>${user.username}</span>
+              <div class="unban-action">
+                <button class="unban-user-button" type="button" data-username="${user.username}">Unban user</button>
+                <div class="unban-pin-area" hidden>
+                  <input class="unban-pin-input" type="password" inputmode="numeric" maxlength="4" placeholder="PIN" autocomplete="off" />
+                  <button class="confirm-unban-button" type="button" data-username="${user.username}">Unlock</button>
+                  <p class="unban-status panel-status"></p>
+                </div>
+              </div>
+            </div>
+          `).join("");
+        }
+
+        async function unbanUser(username, pin, statusElement) {
+          if (pin !== "2483") {
+            statusElement.textContent = "Incorrect PIN.";
+            return;
+          }
+          const { error } = await supabase
+            .from(activeLeaderboardTable)
+            .update({ banned: false, banned_at: null })
+            .eq("username", username);
+          if (error) {
+            statusElement.textContent = error.code === "42501"
+              ? "Unban blocked by Supabase RLS. Add the update policy."
+              : `Unban failed: ${error.message || "Supabase rejected the request."}`;
+            return;
+          }
+          await loadBanland();
+          await syncLeaderboard();
+        }
+
+        async function banSelectedUser() {
+          if (!selectedLeaderboardUser) return;
+          if (banPinInput.value !== "2483") {
+            banUserStatus.textContent = "Incorrect PIN.";
+            return;
+          }
+          if (!supabase) {
+            banUserStatus.textContent = "Banning needs the public Supabase connection.";
+            return;
+          }
+          banUserStatus.textContent = "Banning profile...";
+          const { error } = await supabase
+            .from(activeLeaderboardTable)
+            .update({ banned: true, banned_at: new Date().toISOString() })
+            .eq("username", selectedLeaderboardUser);
+          if (error) {
+            banUserStatus.textContent = error.code === "42501"
+              ? "Ban blocked by Supabase RLS. Add the update policy first."
+              : `Ban failed: ${error.message || "Supabase rejected the request."}`;
+            return;
+          }
+          closeUserModal();
+          await syncLeaderboard();
+          await loadProfileSuggestions();
+        }
+
+        async function checkCurrentUserBan() {
+          if (selectedLeaderboardUser === getUsername()) {
+            sessionStorage.removeItem("clickerBanAccess");
+            banAccessGate.hidden = false;
+          }
+          if (!supabase || sessionStorage.getItem("clickerBanAccess") === "granted") return;
+          const { data } = await supabase
+            .from(activeLeaderboardTable)
+            .select("banned")
+            .eq("username", getUsername())
+            .maybeSingle();
+          if (data?.banned) banAccessGate.hidden = false;
+        }
+
+        function bindLeaderboardUserActions() {
+          leaderboardBody.addEventListener("click", (event) => {
+            const row = event.target.closest(".leaderboard-row-selectable");
+            if (row?.dataset.username) openUserModal(row.dataset.username);
+          });
+          document.getElementById("closeUserModal").addEventListener("click", closeUserModal);
+          leaderboardUserModal.addEventListener("click", (event) => {
+            if (event.target === leaderboardUserModal) closeUserModal();
+          });
+          document.getElementById("searchSelectedUser").addEventListener("click", () => {
+            profileSearchInput.value = selectedLeaderboardUser;
+            closeUserModal();
+            void searchProfile(selectedLeaderboardUser);
+            document.querySelector(".profile-panel").scrollIntoView({ behavior: "smooth", block: "center" });
+          });
+          document.getElementById("deleteSelectedUser").addEventListener("click", () => {
+            deletePinArea.hidden = false;
+            banPinArea.hidden = true;
+            deletePinInput.focus();
+          });
+          document.getElementById("banSelectedUser").addEventListener("click", () => {
+            banPinArea.hidden = false;
+            deletePinArea.hidden = true;
+            banPinInput.focus();
+          });
+          document.getElementById("confirmDeleteUser").addEventListener("click", () => {
+            void deleteSelectedLeaderboardUser();
+          });
+          document.getElementById("confirmBanUser").addEventListener("click", () => {
+            void banSelectedUser();
+          });
+          document.getElementById("banlandButton").addEventListener("click", () => {
+            void loadBanland();
+          });
+          document.getElementById("closeBanland").addEventListener("click", closeBanland);
+          banlandModal.addEventListener("click", (event) => {
+            if (event.target === banlandModal) closeBanland();
+            const unbanButton = event.target.closest(".unban-user-button");
+            if (unbanButton) {
+              const pinArea = unbanButton.parentElement.querySelector(".unban-pin-area");
+              pinArea.hidden = false;
+              pinArea.querySelector(".unban-pin-input").focus();
+              return;
+            }
+            const confirmButton = event.target.closest(".confirm-unban-button");
+            if (confirmButton) {
+              const pinArea = confirmButton.parentElement;
+              void unbanUser(
+                confirmButton.dataset.username,
+                pinArea.querySelector(".unban-pin-input").value,
+                pinArea.querySelector(".unban-status")
+              );
+            }
+          });
+          document.getElementById("unlockBannedAccount").addEventListener("click", () => {
+            const pin = document.getElementById("banAccessPin").value;
+            const accessStatus = document.getElementById("banAccessStatus");
+            if (pin !== "2483") {
+              accessStatus.textContent = "Incorrect PIN.";
+              return;
+            }
+            sessionStorage.setItem("clickerBanAccess", "granted");
+            banAccessGate.hidden = true;
+          });
+          profileSearchInput.addEventListener("focus", () => {
+            profileSuggestions.hidden = false;
+          });
+          profileSearchInput.addEventListener("input", () => {
+            const query = profileSearchInput.value.trim().toLowerCase();
+            [...profileSuggestions.querySelectorAll(".profile-suggestion")].forEach((suggestion) => {
+              suggestion.hidden = Boolean(query) && !suggestion.textContent.toLowerCase().includes(query);
+            });
+            profileSuggestions.hidden = false;
+          });
+          profileSuggestions.addEventListener("click", (event) => {
+            const suggestion = event.target.closest(".profile-suggestion");
+            if (!suggestion) return;
+            profileSearchInput.value = suggestion.dataset.username;
+            profileSuggestions.hidden = true;
+            void searchProfile(suggestion.dataset.username);
+          });
+          document.addEventListener("click", (event) => {
+            if (!event.target.closest(".profile-search-form")) profileSuggestions.hidden = true;
+          });
         }
 
         function bindModeButtons() {
@@ -748,6 +1131,8 @@
 
         let score = getScore();
         bindStoreAndProfiles();
+        bindLeaderboardUserActions();
+        void loadProfileSuggestions();
 
         function render() {
           updateTotal();
@@ -784,6 +1169,13 @@
           `;
         } else {
           syncLeaderboard();
+          void loadProfileSuggestions();
+          void saveScoreToLeaderboard();
+          void (async () => {
+            await resolveLeaderboardTable();
+            await checkCurrentUserBan();
+            setInterval(checkCurrentUserBan, 10000);
+          })();
         }
 
         render();
