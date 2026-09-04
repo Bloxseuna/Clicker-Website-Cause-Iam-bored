@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Untitled Clicker or SMT</title>
+    <meta
+      name="description"
+      content="A multiplayer clicker game with a live global leaderboard powered by Supabase."
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="background-glow glow-one"></div>
+    <div class="background-glow glow-two"></div>
+
+    <main class="app-shell">
+      <section class="game-panel glass-card">
+        <header class="topbar">
+          <div class="brand-wrap">
+            <span class="brand-badge">⚡</span>
+            <div>
+              <h1>Untitled Clicker or SMT</h1>
+            </div>
+          </div>
+        </header>
+
+        <div class="score-card">
+          <p class="score-label">Your Total Clicks</p>
+          <div id="totalClicks" class="score-value">0</div>
+          <p id="statusText" class="status-text">Enter a username to begin.</p>
+        </div>
+
+        <button id="clickButton" class="click-button" type="button" aria-label="Click me">
+          CLICK ME
+        </button>
+      </section>
+
+      <aside class="leaderboard-panel glass-card">
+        <div class="leaderboard-header">
+          <div>
+            <p class="eyebrow">Worldwide</p>
+            <h2>Global Leaderboard</h2>
+          </div>
+          <span id="leaderboardBadge" class="leaderboard-badge">Live</span>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Username</th>
+                <th>Score</th>
+              </tr>
+            </thead>
+            <tbody id="leaderboardBody">
+              <tr>
+                <td colspan="3" class="table-empty">Loading leaderboard...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </aside>
+    </main>
+
+    <script>
+      (() => {
+        const usernameKey = "clickerUsername";
+        const button = document.getElementById("clickButton");
+        const totalClicks = document.getElementById("totalClicks");
+        const statusText = document.getElementById("statusText");
+
+        const getUsername = () => {
+          let username = localStorage.getItem(usernameKey);
+
+          if (!username) {
+            username = `user-${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+            localStorage.setItem(usernameKey, username);
+          }
+
+          return username;
+        };
+
+        let score = Number(localStorage.getItem("clickerScore") || 0);
+
+        const render = () => {
+          totalClicks.textContent = score.toLocaleString();
+          statusText.textContent = `Player: ${getUsername()}. Click to boost your score!`;
+        };
+
+        button.addEventListener("click", () => {
+          score += 1;
+          localStorage.setItem("clickerScore", String(score));
+          totalClicks.textContent = score.toLocaleString();
+          statusText.textContent = `Excellent! ${getUsername()} is on fire.`;
+        });
+
+        render();
+      })();
+    </script>
+  </body>
+</html>
