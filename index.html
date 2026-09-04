@@ -921,10 +921,6 @@
         }
 
         async function checkCurrentUserBan() {
-          if (selectedLeaderboardUser === getUsername()) {
-            sessionStorage.removeItem("clickerBanAccess");
-            banAccessGate.hidden = false;
-          }
           if (!supabase || sessionStorage.getItem("clickerBanAccess") === "granted") return;
           const { data } = await supabase
             .from(activeLeaderboardTable)
