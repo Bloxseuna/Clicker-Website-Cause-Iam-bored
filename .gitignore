@@ -1,0 +1,58 @@
+# Dependencies and package-manager folders
+node_modules/
+bower_components/
+
+# Build and export output
+dist/
+build/
+out/
+public/build/
+coverage/
+
+# Bundler and tool caches
+.cache/
+.parcel-cache/
+.vite/
+.next/
+.nuxt/
+.svelte-kit/
+
+# Logs and debug output
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Test and browser automation output
+playwright-report/
+test-results/
+
+# Deployment tool folders
+.vercel/
+.netlify/
+
+# OS-generated files
+.DS_Store
+.DS_Store?
+Thumbs.db
+Thumbs.db:encryptable
+desktop.ini
+$RECYCLE.BIN/
+
+# Editor and temporary files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+*.tmp
+*.temp
